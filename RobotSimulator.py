@@ -23,6 +23,27 @@ class RobotSimulator:
         self.status_running = False
         self.status_thread = None
 
+        # 사용 가능한 로봇 목록
+        self.robot_ids = ['ROBOT-001', 'ROBOT-002', 'ROBOT-003']
+
+        # 각 로봇별 위치 정보 저장 (robot_id: {'x': float, 'y': float})
+        self.robot_positions = {
+            'ROBOT-001': {'x': 0.0, 'y': 0.0},
+            'ROBOT-002': {'x': 0.0, 'y': 0.0},
+            'ROBOT-003': {'x': 0.0, 'y': 0.0}
+        }
+
+        # 각 로봇별 상태 정보 저장
+        self.robot_states = {
+            'ROBOT-001': {'battery': 80, 'role': 'EMPTY', 'operational_status': 'IDLE'},
+            'ROBOT-002': {'battery': 80, 'role': 'EMPTY', 'operational_status': 'IDLE'},
+            'ROBOT-003': {'battery': 80, 'role': 'EMPTY', 'operational_status': 'IDLE'}
+        }
+
+        # 현재 위치 추적
+        self.current_x = 0
+        self.current_y = 0
+
         self.setup_ui()
 
     def setup_ui(self):
@@ -75,9 +96,10 @@ class RobotSimulator:
 
         # 로봇 ID
         ttk.Label(robot_frame, text="로봇 ID:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
-        self.robot_id_entry = ttk.Entry(robot_frame, width=20)
-        self.robot_id_entry.insert(0, "ROBOT-001")
-        self.robot_id_entry.grid(row=0, column=1, padx=5, pady=5)
+        self.robot_id_combobox = ttk.Combobox(robot_frame, width=18, values=self.robot_ids, state='readonly')
+        self.robot_id_combobox.set("ROBOT-001")
+        self.robot_id_combobox.grid(row=0, column=1, padx=5, pady=5)
+        self.robot_id_combobox.bind('<<ComboboxSelected>>', self.on_robot_id_changed)
 
         # 시작점
         ttk.Label(robot_frame, text="시작점 X:").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
@@ -173,9 +195,10 @@ class RobotSimulator:
 
         # 로봇 ID
         ttk.Label(robot_status_frame, text="로봇 ID:").grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
-        self.status_robot_id_entry = ttk.Entry(robot_status_frame, width=30)
-        self.status_robot_id_entry.insert(0, "ROBOT-001")
-        self.status_robot_id_entry.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+        self.status_robot_id_combobox = ttk.Combobox(robot_status_frame, width=27, values=self.robot_ids, state='readonly')
+        self.status_robot_id_combobox.set("ROBOT-001")
+        self.status_robot_id_combobox.grid(row=0, column=1, padx=5, pady=5, sticky=tk.W)
+        self.status_robot_id_combobox.bind('<<ComboboxSelected>>', self.on_status_robot_id_changed)
 
         # 배터리 레벨
         ttk.Label(robot_status_frame, text="배터리 레벨 (%):").grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
@@ -189,19 +212,21 @@ class RobotSimulator:
         self.battery_value_label = ttk.Label(battery_frame, text="80%")
         self.battery_value_label.grid(row=0, column=1)
 
-        self.battery_scale.config(command=lambda v: self.battery_value_label.config(text=f"{int(float(v))}%"))
+        self.battery_scale.config(command=self.on_battery_changed)
 
         # Role
         ttk.Label(robot_status_frame, text="역할 (Role):").grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
         self.role_combobox = ttk.Combobox(robot_status_frame, width=27, values=["EMPTY", "CLEANING", "WATERING", "MONITORING", "FERTILIZING", "TRANSPLANTING", "HARVESTING"])
         self.role_combobox.set("EMPTY")
         self.role_combobox.grid(row=2, column=1, padx=5, pady=5, sticky=tk.W)
+        self.role_combobox.bind('<<ComboboxSelected>>', self.on_role_changed)
 
         # Operational Status
         ttk.Label(robot_status_frame, text="작동 상태:").grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
         self.operational_status_combobox = ttk.Combobox(robot_status_frame, width=27, values=["IDLE", "PREPARE", "MOVING", "WORKING", "CHARGING", "PAUSE", "STOP", "ERROR"])
         self.operational_status_combobox.set("IDLE")
         self.operational_status_combobox.grid(row=3, column=1, padx=5, pady=5, sticky=tk.W)
+        self.operational_status_combobox.bind('<<ComboboxSelected>>', self.on_operational_status_changed)
 
         # 전송 주기
         ttk.Label(robot_status_frame, text="전송 주기 (초):").grid(row=4, column=0, sticky=tk.W, padx=5, pady=5)
@@ -287,6 +312,57 @@ class RobotSimulator:
         self.log_message("MQTT 브로커와 연결이 끊어졌습니다.")
         self.status_log_message("MQTT 브로커와 연결이 끊어졌습니다.")
 
+    def on_robot_id_changed(self, event):
+        """위치 시뮬레이션 탭에서 로봇 ID 변경 시 호출"""
+        # 선택된 로봇의 저장된 위치 값으로 UI 업데이트
+        robot_id = self.robot_id_combobox.get()
+        position = self.robot_positions[robot_id]
+
+        # 시작점 업데이트
+        self.start_x_entry.delete(0, tk.END)
+        self.start_x_entry.insert(0, f"{position['x']:.2f}")
+        self.start_y_entry.delete(0, tk.END)
+        self.start_y_entry.insert(0, f"{position['y']:.2f}")
+
+        # 현재 위치도 업데이트
+        self.current_x = position['x']
+        self.current_y = position['y']
+
+        self.log_message(f"로봇 {robot_id} 선택됨 - 저장된 위치: X={position['x']:.2f}, Y={position['y']:.2f}")
+
+    def on_status_robot_id_changed(self, event):
+        """상태 정보 탭에서 로봇 ID 변경 시 호출"""
+        # 선택된 로봇의 저장된 상태 값으로 UI 업데이트
+        robot_id = self.status_robot_id_combobox.get()
+        state = self.robot_states[robot_id]
+
+        # 배터리, role, operational_status 업데이트
+        self.battery_scale.set(state['battery'])
+        self.battery_value_label.config(text=f"{state['battery']}%")
+        self.role_combobox.set(state['role'])
+        self.operational_status_combobox.set(state['operational_status'])
+
+        self.status_log_message(f"로봇 {robot_id} 선택됨 - 배터리: {state['battery']}%, 역할: {state['role']}, 상태: {state['operational_status']}")
+
+    def on_battery_changed(self, value):
+        """배터리 레벨 변경 시 호출"""
+        battery_level = int(float(value))
+        self.battery_value_label.config(text=f"{battery_level}%")
+
+        # 현재 로봇의 배터리 상태 저장
+        robot_id = self.status_robot_id_combobox.get()
+        self.robot_states[robot_id]['battery'] = battery_level
+
+    def on_role_changed(self, event):
+        """역할 변경 시 호출"""
+        robot_id = self.status_robot_id_combobox.get()
+        self.robot_states[robot_id]['role'] = self.role_combobox.get()
+
+    def on_operational_status_changed(self, event):
+        """작동 상태 변경 시 호출"""
+        robot_id = self.status_robot_id_combobox.get()
+        self.robot_states[robot_id]['operational_status'] = self.operational_status_combobox.get()
+
     def calculate_heading(self, dx, dy):
         """두 점 사이의 방향각 계산 (도 단위)"""
         angle = math.degrees(math.atan2(dy, dx))
@@ -297,7 +373,7 @@ class RobotSimulator:
 
     def start_simulation(self):
         try:
-            robot_id = self.robot_id_entry.get()
+            robot_id = self.robot_id_combobox.get()
             start_x = float(self.start_x_entry.get())
             start_y = float(self.start_y_entry.get())
             end_x = float(self.end_x_entry.get())
@@ -308,6 +384,10 @@ class RobotSimulator:
             if not robot_id:
                 messagebox.showwarning("입력 오류", "로봇 ID를 입력해주세요.")
                 return
+
+            # 현재 위치를 시작점으로 초기화
+            self.current_x = start_x
+            self.current_y = start_y
 
             self.is_running = True
             self.start_btn.config(state=tk.DISABLED)
@@ -410,6 +490,8 @@ class RobotSimulator:
         self.root.after(0, self.stop_simulation)
 
     def update_ui(self, x, y, progress):
+        self.current_x = x
+        self.current_y = y
         self.current_position_label.config(text=f"X: {x:.2f}, Y: {y:.2f}")
         self.progress_bar['value'] = progress
         self.progress_label.config(text=f"{progress:.1f}%")
@@ -419,7 +501,17 @@ class RobotSimulator:
         self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
         if not self.is_running:
-            self.log_message("시뮬레이션 정지")
+            # 현재 로봇의 위치를 딕셔너리에 저장
+            robot_id = self.robot_id_combobox.get()
+            self.robot_positions[robot_id]['x'] = self.current_x
+            self.robot_positions[robot_id]['y'] = self.current_y
+
+            # 현재 위치를 시작점으로 업데이트
+            self.start_x_entry.delete(0, tk.END)
+            self.start_x_entry.insert(0, f"{self.current_x:.2f}")
+            self.start_y_entry.delete(0, tk.END)
+            self.start_y_entry.insert(0, f"{self.current_y:.2f}")
+            self.log_message(f"시뮬레이션 정지 - {robot_id} 위치 저장됨: X={self.current_x:.2f}, Y={self.current_y:.2f}")
 
     def log_message(self, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -431,7 +523,7 @@ class RobotSimulator:
 
     def start_status_publishing(self):
         try:
-            robot_id = self.status_robot_id_entry.get()
+            robot_id = self.status_robot_id_combobox.get()
             interval = float(self.status_interval_entry.get())
 
             if not robot_id:
@@ -497,7 +589,14 @@ class RobotSimulator:
         self.status_start_btn.config(state=tk.NORMAL)
         self.status_stop_btn.config(state=tk.DISABLED)
         self.status_sending_label.config(text="정지", foreground="red")
-        self.status_log_message("상태 전송 정지")
+
+        # 현재 로봇의 상태를 딕셔너리에 저장
+        robot_id = self.status_robot_id_combobox.get()
+        self.robot_states[robot_id]['battery'] = int(self.battery_scale.get())
+        self.robot_states[robot_id]['role'] = self.role_combobox.get()
+        self.robot_states[robot_id]['operational_status'] = self.operational_status_combobox.get()
+
+        self.status_log_message(f"상태 전송 정지 - {robot_id} 상태 저장됨")
 
     def status_log_message(self, message):
         timestamp = datetime.now().strftime("%H:%M:%S")
